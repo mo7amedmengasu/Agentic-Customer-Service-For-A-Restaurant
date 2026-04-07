@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.user import User
-from app.repositories.user_repo import UserRepository
+from app.repositories.user import UserRepository
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/users/login")
 
@@ -29,8 +29,8 @@ def get_current_user(
     if user_id is None:
         raise credentials_exception
     
-    user_repo = UserRepository(db)
-    user = user_repo.get_by_id(int(user_id))
+    user_repo_instance = UserRepository(User)
+    user = user_repo_instance.get(db, id=int(user_id))
     if user is None:
         raise credentials_exception
     

@@ -14,3 +14,5 @@ passlib[bcrypt]
 python-multipart
 email-validator
 alembic
+psycopg2
+httpx

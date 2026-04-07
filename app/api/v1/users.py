@@ -1,76 +1,69 @@
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from typing import Any, List
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+from app import schemas
+from app.api import deps
+from app.repositories import user as user_repo
 from app.core.database import get_db
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, Token
-from app.services.user_service import UserService
-from app.api.deps import get_current_active_user, get_current_superuser
-from app.models.user import User
 
 router = APIRouter()
 
-
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register_user(user_data: UserCreate, db: Session = Depends(get_db)):
-    """Register a new user."""
-    service = UserService(db)
-    return service.create_user(user_data)
-
-
-@router.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """Login and get access token."""
-    service = UserService(db)
-    return service.login(form_data.username, form_data.password)
-
-
-@router.get("/me", response_model=UserResponse)
-def get_current_user_info(current_user: User = Depends(get_current_active_user)):
-    """Get current user information."""
-    return current_user
-
-
-@router.put("/me", response_model=UserResponse)
-def update_current_user(
-    user_data: UserUpdate,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """Update current user information."""
-    service = UserService(db)
-    return service.update_user(current_user.id, user_data)
-
-
-@router.get("/", response_model=List[UserResponse])
-def get_all_users(
+@router.get("/", response_model=List[schemas.User])
+def read_users(
+    db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    current_user: User = Depends(get_current_superuser),
-    db: Session = Depends(get_db)
-):
-    """Get all users (admin only)."""
-    service = UserService(db)
-    return service.get_users(skip=skip, limit=limit)
+) -> Any:
+    users = user_repo.get_multi(db, skip=skip, limit=limit)
+    return users
 
+@router.post("/", response_model=schemas.User)
+def create_user(
+    *,
+    db: Session = Depends(get_db),
+    user_in: schemas.UserCreate,
+) -> Any:
+    user = user_repo.get_by_email(db, email=user_in.user_email)
+    if user:
+        raise HTTPException(
+            status_code=400,
+            detail="The user with this email already exists in the system.",
+        )
+    user = user_repo.create(db, obj_in=user_in.__dict__)
+    return user
 
-@router.get("/{user_id}", response_model=UserResponse)
-def get_user(
+@router.get("/{user_id}", response_model=schemas.User)
+def read_user_by_id(
     user_id: int,
-    current_user: User = Depends(get_current_superuser),
-    db: Session = Depends(get_db)
-):
-    """Get a specific user (admin only)."""
-    service = UserService(db)
-    return service.get_user(user_id)
+    db: Session = Depends(get_db),
+) -> Any:
+    user = user_repo.get(db, id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
 
+@router.put("/{user_id}", response_model=schemas.User)
+def update_user(
+    *,
+    db: Session = Depends(get_db),
+    user_id: int,
+    user_in: schemas.UserUpdate,
+) -> Any:
+    user = user_repo.get(db, id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = user_repo.update(db, db_obj=user, obj_in=user_in)
+    return user
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{user_id}", response_model=schemas.User)
 def delete_user(
+    *,
+    db: Session = Depends(get_db),
     user_id: int,
-    current_user: User = Depends(get_current_superuser),
-    db: Session = Depends(get_db)
-):
-    """Delete a user (admin only)."""
-    service = UserService(db)
-    service.delete_user(user_id)
+) -> Any:
+    user = user_repo.get(db, id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = user_repo.remove(db, id=user_id)
+    return user
