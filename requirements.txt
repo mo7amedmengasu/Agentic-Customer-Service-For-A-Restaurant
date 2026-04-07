@@ -1,0 +1,16 @@
+sqlalchemy
+ipykernel
+fastapi
+uvicorn
+pytest
+pytest-asyncio
+langchain
+langchain-openai
+langchain_core
+langgraph
+pydantic-settings
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+email-validator
+alembic
