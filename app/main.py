@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.core.database import init_db
 from app.api.v1.router import api_router
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize database on startup."""

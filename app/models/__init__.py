@@ -4,6 +4,7 @@ from .order import Order
 from .order_item import OrderItem
 from .delivery import Delivery
 from .transaction import Transaction
+from .faq import FAQ
 
 __all__ = [
     "User",
@@ -12,4 +13,6 @@ __all__ = [
     "OrderItem",
     "Delivery",
     "Transaction",
+    "FAQ",
+
 ]

@@ -1,4 +1,6 @@
-from typing import TypedDict
+from typing import Optional, TypedDict
+
+from app.models.faq import FAQ
 
 class MainState(TypedDict):
     user_message: str
@@ -11,3 +13,4 @@ class MainState(TypedDict):
     extracted_complaint: dict | None
     tool_result: dict | None
     messages: list
+    faq: Optional[FAQ]
