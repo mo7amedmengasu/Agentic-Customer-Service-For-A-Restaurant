@@ -35,26 +35,9 @@ def get_faqs(db: Session = Depends(get_db)):
 
 
 
-
 @router.post("/ask")
 def ask(question: str, db: Session = Depends(get_db)):
 
-    result = faq_agent(
-        {
-            "user_message": str(question),
-            "faq": None,
-            "response": None,
-            "tool_result": None
-        },
-        db
-    )
+    result = faq_agent(question, db)
 
-    return {
-        "question": question,
-        "answer": result.get("response"),
-        "matched_faq_score": (
-            result.get("tool_result", {}).get("score")
-            if result.get("tool_result")
-            else None
-        )
-    }
+    return result
