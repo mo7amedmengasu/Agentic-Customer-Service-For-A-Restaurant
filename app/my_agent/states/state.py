@@ -1,4 +1,6 @@
-from typing import Any, TypedDict
+from typing import Any, Optional, TypedDict
+
+from app.models.faq import FAQ
 
 class MainState(TypedDict):
     user_message: str
@@ -18,3 +20,4 @@ class MainState(TypedDict):
     requires_follow_up: bool | None
     needs_human: bool | None
     messages: list
+    faq: Optional[FAQ]

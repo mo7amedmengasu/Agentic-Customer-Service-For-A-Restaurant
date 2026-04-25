@@ -6,6 +6,7 @@ from .delivery import Delivery
 from .complaint import Complaint
 from .support_ticket import SupportTicket
 from .transaction import Transaction
+from .faq import FAQ
 
 __all__ = [
     "User",
@@ -16,4 +17,6 @@ __all__ = [
     "Complaint",
     "SupportTicket",
     "Transaction",
+    "FAQ",
+
 ]

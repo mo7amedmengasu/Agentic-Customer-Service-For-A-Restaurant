@@ -11,8 +11,9 @@ class Settings(BaseSettings):
 
     ##change this to your actual database URL in production or use environment variables
     # Database
-    DATABASE_URL: str = "postgresql://postgres:medo2006%40teto@localhost:5432/restaurant_db"
+    DATABASE_URL: str 
     
+    OPENAI_API_KEY: str  #changed here to be read from env variable
     # Security
     SECRET_KEY: str = "your-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
