@@ -14,11 +14,14 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.core.database import SessionLocal, engine, init_db
 from app.models.complaint import Complaint
 from app.models.delivery import Delivery
+from app.models.faq import FAQ
 from app.models.menu_item import MenuItem
 from app.models.order import Order
 from app.models.order_item import OrderItem
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.my_agent.tools.faq_tools import get_embedding
+import json
 
 
 def clear_all_rows() -> None:
@@ -27,12 +30,12 @@ def clear_all_rows() -> None:
         if dialect.startswith("postgres"):
             connection.execute(
                 text(
-                    "TRUNCATE TABLE complaints, transactions, delivery, order_items, orders, menu_items, users RESTART IDENTITY CASCADE"
+                    "TRUNCATE TABLE faqs, complaints, transactions, delivery, order_items, orders, menu_items, users RESTART IDENTITY CASCADE"
                 )
             )
             return
 
-        for table_name in ("complaints", "transactions", "delivery", "order_items", "orders", "menu_items", "users"):
+        for table_name in ("faqs", "complaints", "transactions", "delivery", "order_items", "orders", "menu_items", "users"):
             connection.execute(text(f"DELETE FROM {table_name}"))
 
 
@@ -133,6 +136,60 @@ def seed_fake_data() -> dict[str, int]:
         ]
         db.add_all(complaints)
 
+        faq_entries = [
+            FAQ(
+                question="What are your opening hours?",
+                answer="We are open daily from 10:00 AM to 11:00 PM.",
+                embedding=json.dumps(get_embedding("What are your opening hours?")),
+            ),
+            FAQ(
+                question="Do you offer delivery?",
+                answer="Yes, we offer delivery through our app and website within our service area.",
+                embedding=json.dumps(get_embedding("Do you offer delivery?")),
+            ),
+            FAQ(
+                question="How long does delivery usually take?",
+                answer="Delivery usually takes between 30 and 45 minutes depending on demand and distance.",
+                embedding=json.dumps(get_embedding("How long does delivery usually take?")),
+            ),
+            FAQ(
+                question="Can I customize my order?",
+                answer="Yes, you can customize many menu items by adding notes or selecting available options.",
+                embedding=json.dumps(get_embedding("Can I customize my order?")),
+            ),
+            FAQ(
+                question="What payment methods do you accept?",
+                answer="We accept cash, cards, and supported online payment methods.",
+                embedding=json.dumps(get_embedding("What payment methods do you accept?")),
+            ),
+            FAQ(
+                question="Do you have vegetarian options?",
+                answer="Yes, we have several vegetarian items on the menu, including pizza, pasta, and sides.",
+                embedding=json.dumps(get_embedding("Do you have vegetarian options?")),
+            ),
+            FAQ(
+                question="How can I track my order?",
+                answer="You can track your order status from your account in the app after placing it.",
+                embedding=json.dumps(get_embedding("How can I track my order?")),
+            ),
+            FAQ(
+                question="Can I cancel an order after placing it?",
+                answer="You can request cancellation before the order starts preparation, subject to confirmation.",
+                embedding=json.dumps(get_embedding("Can I cancel an order after placing it?")),
+            ),
+            FAQ(
+                question="Do you have desserts?",
+                answer="Yes, we offer desserts such as chocolate cake and other seasonal sweet items.",
+                embedding=json.dumps(get_embedding("Do you have desserts?")),
+            ),
+            FAQ(
+                question="How do I contact support?",
+                answer="You can contact support through the support agent or the help section in the app.",
+                embedding=json.dumps(get_embedding("How do I contact support?")),
+            ),
+        ]
+        db.add_all(faq_entries)
+
         db.commit()
 
         return {
@@ -143,6 +200,7 @@ def seed_fake_data() -> dict[str, int]:
             "delivery": len(deliveries),
             "transactions": len(transactions),
             "complaints": len(complaints),
+            "faqs": len(faq_entries),
         }
     except Exception:
         db.rollback()

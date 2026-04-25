@@ -15,7 +15,6 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 load_dotenv(PROJECT_ROOT / ".env")
-load_dotenv(Path(__file__).resolve().parent / ".env")
 
 
 def load_support_modules() -> tuple[Any, Any]:
