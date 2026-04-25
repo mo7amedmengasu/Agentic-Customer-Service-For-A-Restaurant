@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.user import User
-from app.repositories.user import UserRepository
+from app.repositories.user_repository import UserRepository
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/users/login")
 
@@ -25,12 +25,15 @@ def get_current_user(
     if payload is None:
         raise credentials_exception
     
-    user_id: str = payload.get("sub")
+    user_id = payload.get("sub")
     if user_id is None:
         raise credentials_exception
     
     user_repo_instance = UserRepository(User)
-    user = user_repo_instance.get(db, id=int(user_id))
+    try:
+        user = user_repo_instance.get(db, id=int(user_id))
+    except (TypeError, ValueError):
+        raise credentials_exception
     if user is None:
         raise credentials_exception
     
@@ -40,20 +43,15 @@ def get_current_user(
 def get_current_active_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    """Get the current active user."""
-    if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
-        )
+    """Return the authenticated user for projects without an active flag."""
     return current_user
 
 
 def get_current_superuser(
     current_user: User = Depends(get_current_active_user)
 ) -> User:
-    """Get the current superuser."""
-    if not current_user.is_superuser:
+    """Require an administrative user type."""
+    if current_user.user_type not in {"admin", "superuser"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions"

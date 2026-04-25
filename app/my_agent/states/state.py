@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import Any, TypedDict
 
 class MainState(TypedDict):
     user_message: str
@@ -10,4 +10,11 @@ class MainState(TypedDict):
     extracted_order: dict | None
     extracted_complaint: dict | None
     tool_result: dict | None
+    next_step: str | None
+    order_ready: bool | None
+    order_confirmed: bool | None
+    missing_fields: list[str] | None
+    invalid_items: list[dict[str, Any]] | None
+    requires_follow_up: bool | None
+    needs_human: bool | None
     messages: list

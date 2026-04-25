@@ -3,6 +3,8 @@ from .menu_item import MenuItem
 from .order import Order
 from .order_item import OrderItem
 from .delivery import Delivery
+from .complaint import Complaint
+from .support_ticket import SupportTicket
 from .transaction import Transaction
 
 __all__ = [
@@ -11,5 +13,7 @@ __all__ = [
     "Order",
     "OrderItem",
     "Delivery",
+    "Complaint",
+    "SupportTicket",
     "Transaction",
 ]

@@ -1,6 +1,45 @@
+# Python environments
 venv/
-.vscode/
-__pycache__/
+.venv/
+env/
+ENV/
+
+# Environment files
 .env
-*.log
+.env.*
+*.env
+
+# Python cache and tooling
+__pycache__/
+*.py[cod]
+*$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Notebook artifacts
+.ipynb_checkpoints/
+
+# Local databases and runtime files
+*.db
+*.db-journal
+*.sqlite3
+*.log
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -17,3 +17,17 @@ class UserUpdate(UserBase):
 class User(UserBase):
     user_id: int
     model_config = ConfigDict(from_attributes=True)
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class TokenPayload(BaseModel):
+    sub: int
+
+
+class UserLogin(BaseModel):
+    user_email: str
+    user_password: str

@@ -1,11 +1,13 @@
 from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app import schemas
 from app.api import deps
 from app.repositories import user as user_repo
 from app.core.database import get_db
+from app.core.security import create_access_token, get_password_hash, verify_password
 
 router = APIRouter()
 
@@ -30,8 +32,38 @@ def create_user(
             status_code=400,
             detail="The user with this email already exists in the system.",
         )
-    user = user_repo.create(db, obj_in=user_in.__dict__)
+    user_data = user_in.model_dump()
+    user_data["user_password"] = get_password_hash(user_in.user_password)
+    user = user_repo.create(db, obj_in=user_data)
     return user
+
+
+@router.post("/login", response_model=schemas.Token)
+def login_access_token(
+    db: Session = Depends(get_db),
+    form_data: OAuth2PasswordRequestForm = Depends(),
+) -> Any:
+    user = user_repo.get_by_email(db, email=form_data.username)
+    if not user:
+        user = user_repo.get_by_name(db, name=form_data.username)
+    if not user or not verify_password(form_data.password, user.user_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username/email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return {
+        "access_token": create_access_token(data={"sub": str(user.user_id)}),
+        "token_type": "bearer",
+    }
+
+
+@router.get("/me", response_model=schemas.User)
+def read_current_user(
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    return current_user
 
 @router.get("/{user_id}", response_model=schemas.User)
 def read_user_by_id(
@@ -53,7 +85,10 @@ def update_user(
     user = user_repo.get(db, id=user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    user = user_repo.update(db, db_obj=user, obj_in=user_in)
+    update_data = user_in.model_dump(exclude_unset=True)
+    if "user_password" in update_data and update_data["user_password"]:
+        update_data["user_password"] = get_password_hash(update_data["user_password"])
+    user = user_repo.update(db, db_obj=user, obj_in=update_data)
     return user
 
 @router.delete("/{user_id}", response_model=schemas.User)

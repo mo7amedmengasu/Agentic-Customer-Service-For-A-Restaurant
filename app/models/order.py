@@ -17,3 +17,4 @@ class Order(Base):
     order_items = relationship("OrderItem", back_populates="order")
     delivery = relationship("Delivery", back_populates="order", uselist=False)
     transactions = relationship("Transaction", back_populates="order")
+    complaints = relationship("Complaint", back_populates="order")

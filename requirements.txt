@@ -16,3 +16,5 @@ email-validator
 alembic
 psycopg2
 httpx
+load_dotenv
+streamlit
