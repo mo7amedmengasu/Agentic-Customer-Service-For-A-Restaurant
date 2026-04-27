@@ -6,6 +6,9 @@ from .delivery_repository import delivery_repo as delivery
 from .complaint_repository import complaint_repo as complaint
 from .support_ticket_repository import support_ticket_repository as support_ticket
 from .transaction_repository import transaction_repo as transaction
+from .chat_session_repository import chat_session_repository as chat_session
+from .chat_message_repository import chat_message_repository as chat_message
+from .user_memory_repository import user_memory_repository as user_memory
 
 __all__ = [
     "user",
@@ -15,5 +18,8 @@ __all__ = [
     "delivery",
     "complaint",
     "support_ticket",
-    "transaction"
+    "transaction",
+    "chat_session",
+    "chat_message",
+    "user_memory",
 ]
