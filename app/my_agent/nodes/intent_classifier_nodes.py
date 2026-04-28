@@ -5,6 +5,7 @@ from typing import Literal
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
+from app.core.config import settings
 from app.my_agent.states.state import MainState
 
 
@@ -12,7 +13,11 @@ _VALID_INTENTS = {"faq", "menu", "order", "support"}
 
 
 def _get_llm() -> ChatOpenAI:
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    return ChatOpenAI(
+        model="gpt-4o-mini",
+        api_key=settings.OPENAI_API_KEY,
+        temperature=0,
+    )
 
 
 class IntentDecision(BaseModel):

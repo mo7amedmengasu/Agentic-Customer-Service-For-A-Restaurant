@@ -8,6 +8,7 @@ from .support_ticket_repository import support_ticket_repository as support_tick
 from .transaction_repository import transaction_repo as transaction
 from .chat_session_repository import chat_session_repository as chat_session
 from .chat_message_repository import chat_message_repository as chat_message
+from .user_memory_repository import user_memory_repository as user_memory
 
 __all__ = [
     "user",
@@ -20,4 +21,5 @@ __all__ = [
     "transaction",
     "chat_session",
     "chat_message",
+    "user_memory",
 ]

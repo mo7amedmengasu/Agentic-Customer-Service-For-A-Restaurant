@@ -122,7 +122,13 @@ def send_message(
     )
 
     graph = get_orchestrator_graph()
-    config = {"configurable": {"thread_id": session_id}}
+    config = {
+        "configurable": {
+            "thread_id": session_id,
+            "user_id": current_user.user_id,
+        },
+        "recursion_limit": 50,
+    }
 
     try:
         result = graph.invoke(
@@ -134,9 +140,12 @@ def send_message(
             config=config,
         )
     except Exception as e:
+        import traceback
+
+        traceback.print_exc()
         response_text = (
             "Sorry — I had trouble processing that. "
-            f"({type(e).__name__}). Please try again."
+            f"({type(e).__name__}: {str(e)[:200]}). Please try again."
         )
         chat_message_repository.append(
             db, session_id=session_id, role="assistant", content=response_text

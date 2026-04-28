@@ -7,6 +7,10 @@ from app.my_agent.agents.menu_agent import menu_agent_graph
 from app.my_agent.agents.order_agent import order_agent_graph
 from app.my_agent.agents.support_agent import support_agent_graph
 from app.my_agent.checkpointer import get_checkpointer
+from app.my_agent.nodes.memory_nodes import (
+    extract_facts_node,
+    load_user_facts_node,
+)
 from app.my_agent.nodes.orchestrator_nodes import (
     fallback_response_node,
     faq_branch_node,
@@ -26,15 +30,18 @@ def build_orchestrator_graph(*, with_checkpointer: bool = True):
     graph = StateGraph(MainState)
 
     graph.add_node("reset_turn", reset_turn_node)
+    graph.add_node("load_memory", load_user_facts_node)
     graph.add_node("classify", intent_classifier_graph)
     graph.add_node("faq", faq_branch_node)
     graph.add_node("menu", menu_agent_graph)
     graph.add_node("order", order_agent_graph)
     graph.add_node("support", support_agent_graph)
+    graph.add_node("extract_memory", extract_facts_node)
     graph.add_node("finalize", fallback_response_node)
 
     graph.set_entry_point("reset_turn")
-    graph.add_edge("reset_turn", "classify")
+    graph.add_edge("reset_turn", "load_memory")
+    graph.add_edge("load_memory", "classify")
 
     graph.add_conditional_edges(
         "classify",
@@ -47,10 +54,11 @@ def build_orchestrator_graph(*, with_checkpointer: bool = True):
         },
     )
 
-    graph.add_edge("faq", "finalize")
-    graph.add_edge("menu", "finalize")
-    graph.add_edge("order", "finalize")
-    graph.add_edge("support", "finalize")
+    graph.add_edge("faq", "extract_memory")
+    graph.add_edge("menu", "extract_memory")
+    graph.add_edge("order", "extract_memory")
+    graph.add_edge("support", "extract_memory")
+    graph.add_edge("extract_memory", "finalize")
     graph.add_edge("finalize", END)
 
     if with_checkpointer:
