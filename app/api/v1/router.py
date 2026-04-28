@@ -1,5 +1,14 @@
 from fastapi import APIRouter
-from app.api.v1 import users, orders, menu_items, order_items, deliveries, transactions, faq
+from app.api.v1 import (
+    users,
+    orders,
+    menu_items,
+    order_items,
+    deliveries,
+    transactions,
+    faq,
+    chat,
+)
 
 api_router = APIRouter()
 
@@ -10,3 +19,4 @@ api_router.include_router(order_items.router, prefix="/order-items", tags=["orde
 api_router.include_router(deliveries.router, prefix="/deliveries", tags=["deliveries"])
 api_router.include_router(transactions.router, prefix="/transactions", tags=["transactions"])
 api_router.include_router(faq.router, prefix="/faqs", tags=["faqs"])
+api_router.include_router(chat.router, prefix="/chat", tags=["chat"])

@@ -8,6 +8,7 @@ langchain
 langchain-openai
 langchain_core
 langgraph
+langgraph-checkpoint-postgres
 pydantic-settings
 python-jose[cryptography]
 passlib[bcrypt]
@@ -15,6 +16,8 @@ python-multipart
 email-validator
 alembic
 psycopg2
+psycopg[binary]
+psycopg-pool
 httpx
 load_dotenv
 streamlit
