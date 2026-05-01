@@ -2,7 +2,7 @@ from typing import Any, Optional, TypedDict
 
 from app.models.faq import FAQ
 
-class MainState(TypedDict):
+class MainState(TypedDict, total=False):
     user_message: str
     intent: str | None
     response: str | None
@@ -21,3 +21,6 @@ class MainState(TypedDict):
     needs_human: bool | None
     messages: list
     faq: Optional[FAQ]
+    reflection_attempts: int | None
+    reflection_feedback: str | None
+    reflection_decision: str | None

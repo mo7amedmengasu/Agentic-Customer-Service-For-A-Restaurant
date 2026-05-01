@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.models.user import User
 from app.repositories.chat_session_repository import chat_session_repository
 from app.repositories.chat_message_repository import chat_message_repository
-from app.my_agent.agents.orchestrator import get_orchestrator_graph
+from app.my_agent.workflow import get_main_graph
 
 
 router = APIRouter()
@@ -121,13 +121,13 @@ def send_message(
         db, session_id=session_id, role="user", content=body.message
     )
 
-    graph = get_orchestrator_graph()
+    graph = get_main_graph()
     config = {
         "configurable": {
             "thread_id": session_id,
             "user_id": current_user.user_id,
         },
-        "recursion_limit": 50,
+        "recursion_limit": 120,
     }
 
     try:
@@ -143,10 +143,17 @@ def send_message(
         import traceback
 
         traceback.print_exc()
-        response_text = (
-            "Sorry — I had trouble processing that. "
-            f"({type(e).__name__}: {str(e)[:200]}). Please try again."
-        )
+        if type(e).__name__ == "GraphRecursionError":
+            response_text = (
+                "I had trouble understanding the order. Could you describe "
+                "what you'd like more concretely (e.g. \"1 Margherita Pizza, "
+                "delivery to 123 Main St\")?"
+            )
+        else:
+            response_text = (
+                "Sorry — I had trouble processing that. "
+                f"({type(e).__name__}: {str(e)[:200]}). Please try again."
+            )
         chat_message_repository.append(
             db, session_id=session_id, role="assistant", content=response_text
         )
