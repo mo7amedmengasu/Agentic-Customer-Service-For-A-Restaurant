@@ -21,3 +21,6 @@ class MainState(TypedDict):
     needs_human: bool | None
     messages: list
     faq: Optional[FAQ]
+    reflection_satisfied: bool | None
+    iteration_count: int
+    max_iterations: int

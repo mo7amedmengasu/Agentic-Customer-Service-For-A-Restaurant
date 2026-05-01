@@ -6,6 +6,8 @@ from app import schemas
 from app.api import deps
 from app.repositories import menu_item as menu_item_repo
 from app.core.database import get_db
+from app.my_agent.agents.menu_agent import menu_agent
+from langchain_core.messages import HumanMessage
 
 router = APIRouter()
 
@@ -57,3 +59,18 @@ def delete_menu_item(
     if not item:
         raise HTTPException(status_code=404, detail="Menu item not found")
     return menu_item_repo.remove(db, id=item_id)
+
+
+@router.post("/ask")
+def ask_menu(
+    question: str,
+    db: Session = Depends(get_db),
+):
+    final_state=menu_agent(question=question, db=db)
+
+    return {
+        "question": question,
+        "answer": final_state["response"],
+        "iterations": final_state["iteration_count"],
+        "satisfied": final_state["reflection_satisfied"],
+    }

@@ -11,6 +11,6 @@ class MenuItem(Base):
     item_description = Column(Text)
     item_image = Column(String(255))
     item_price = Column(Numeric(10, 2))
-
+    
     # Relationships
     order_items = relationship("OrderItem", back_populates="menu_item")

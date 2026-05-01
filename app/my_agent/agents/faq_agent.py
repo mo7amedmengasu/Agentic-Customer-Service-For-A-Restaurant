@@ -46,7 +46,10 @@ def faq_agent(question: str, db):
         "extracted_complaint": None,
         "tool_result": None,
         "messages": [],
-        "faq": None
+        "faq": None,
+        "reflection_satisfied": None,
+        "iteration_count": 0,
+        "max_iterations": 3,
     }
 
     print("fresh state",state)
