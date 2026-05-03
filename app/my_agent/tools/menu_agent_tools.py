@@ -30,21 +30,7 @@ def create_menu_tools():
                 "image_url": item.item_image
             }
 
-    @tool
-    def get_items_by_category(category: str):
-        """Retrieve all menu items belonging to a specific category (e.g., 'Dessert', 'Main')."""
-        with SessionLocal() as db:
-            items = menu_repository.get_items_by_category(db, category=category)
-            if not items:
-                return f"No items found in the category: {category}."
-            
-            return [
-                {
-                    "id": i.item_id,
-                    "name": i.item_name,
-                    "price": float(i.item_price)
-                } for i in items
-            ]
+    
 
     @tool
     def search_menu_by_keyword(keyword: str):
@@ -116,7 +102,6 @@ def create_menu_tools():
 
     return [
         get_menu_item_by_name,
-        get_items_by_category,
         search_menu_by_keyword,
         search_menu_semantically,
         get_affordable_items

@@ -2,6 +2,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_core.messages import HumanMessage
 from app.my_agent.states.state import MainState
+from langgraph.checkpoint.memory import MemorySaver
 
 from app.my_agent.nodes.menu_agent_nodes import (
     tool_decision_node,
@@ -19,6 +20,7 @@ from app.my_agent.states.state import MainState
 from langgraph.graph import StateGraph, END
 
 def build_menu_graph(db): # Added db if you need to pass it to tools
+
     graph = StateGraph(MainState)
 
     # 1. Register only the actual worker nodes
@@ -58,7 +60,10 @@ def build_menu_graph(db): # Added db if you need to pass it to tools
 
     graph.add_edge("personalization", END)
 
-    return graph.compile()
+    memory=MemorySaver()
+
+
+    return graph.compile(checkpointer=memory)
 
 
 

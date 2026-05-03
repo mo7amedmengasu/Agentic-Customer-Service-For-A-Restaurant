@@ -13,7 +13,7 @@ llm = ChatOpenAI(api_key=settings.OPENAI_API_KEY, model="gpt-4o-mini", temperatu
 tools = create_menu_tools()
 llm_with_tools = llm.bind_tools(tools)
 
-print(tools)
+
 
 
 class ReflectionDecision(BaseModel):
@@ -22,31 +22,36 @@ class ReflectionDecision(BaseModel):
 
 
 def tool_decision_node(state: MainState):
-    # 1. Clean the history to avoid the 400 error.
-    # OpenAI requires a very specific order. If we are looping, 
-    # the safest bet is to give it the original question + the 'nudge' feedback.
-    
     user_q = state.get("user_message", "")
+    history = state.get("messages", [])
     
-    # We find the last HumanMessage (which is our 'nudge' from reflection_node)
-    # or just use the original question.
-    messages_to_send = []
+    # 1. Create a text-based "Memory Bank"
+    # We convert objects to strings so we don't trigger the 400 error roles.
+    memory_context = ""
+    for msg in history:
+        if msg.type == "human":
+            memory_context += f"Customer: {msg.content}\n"
+        elif msg.type == "ai" and msg.content:
+            memory_context += f"Assistant: {msg.content}\n"
     
-    # If the last message is the "Reflection Feedback" nudge, 
-    # we send the original question + that nudge.
-    if state["messages"] and isinstance(state["messages"][-1], HumanMessage) and "Reflection Feedback" in state["messages"][-1].content:
-        messages_to_send = [
-            HumanMessage(content=user_q),
-            state["messages"][-1] # The nudge
-        ]
-    else:
-        # First attempt: just the question
-        messages_to_send = [HumanMessage(content=user_q)]
+    # 2. Construct a fresh, valid message list for OpenAI
+    # This list ONLY contains a SystemMessage and a HumanMessage.
+    # This is 100% safe from "role" errors.
+    clean_messages = [
+        SystemMessage(content=f"""You are a restaurant assistant. 
+        PREVIOUS CONVERSATION CONTEXT:
+        {memory_context}
+        
+        If the context above shows the user has a preference (like spicy food), 
+        remember it. Use tools only for menu searches."""),
+        HumanMessage(content=user_q)
+    ]
 
-    # 2. Invoke the LLM with the SAFE list
-    response = llm_with_tools.invoke(messages_to_send)
+    # 3. Invoke the LLM
+    response = llm_with_tools.invoke(clean_messages)
     
-    # 3. Manually append to the REAL history for the ToolNode to use
+    # 4. CRITICAL: Update the REAL state
+    # We append the response so the rest of your graph (ToolNode, etc.) works.
     state["messages"].append(response)
     
     return state
@@ -71,60 +76,70 @@ def capture_tool_result_node(state: MainState):
 
 
 def reflection_node(state: MainState):
-    # 1. Grab data for evaluation
-    user_q = state["user_message"]
-    tool_out = state["tool_result"] if state.get("tool_result") else "No tool output available."
+    # 1. Hard Stop: Prevent infinite loops/500 errors
+    if state.get("iteration_count", 0) >= state.get("max_iterations", 3):
+        state["reflection_satisfied"] = True
+        return state
 
-    # 2. Build the internal evaluation prompt
+    # 2. Grab data for evaluation
+    user_q = state["user_message"]
+    tool_out = state.get("tool_result")
+
+    # 3. Short-Circuit: If the tool explicitly said "No items found" or returned an empty list
+    # We treat this as a SUCCESSFUL search (factually empty), not a failure.
+    if tool_out == [] or (isinstance(tool_out, str) and "No items found" in tool_out):
+        state["reflection_satisfied"] = True
+        # Optional: Set a flag to help the response node know it's a 'not found' case
+        return state
+
+    # 4. Standard Evaluation (only if we actually have data to check)
     eval_messages = [
-    SystemMessage(content="""You are a pragmatic quality checker. 
-    Your ONLY goal is to verify if the Tool Search Result contains actual menu items.
-    - If the tool returned specific dishes, prices, or a 'not found' confirmation, mark satisfied: true.
-    - Only mark satisfied: false if the tool returned an error, an empty list, or completely irrelevant data."""),
-    HumanMessage(content=f"User Question: {user_q}\nTool Result: {tool_out}")
+        SystemMessage(content="""You are a pragmatic quality checker. 
+        Your ONLY goal is to verify if the Tool Search Result contains actual menu items.
+        - If the tool returned specific dishes, prices, or a 'not found' confirmation, mark satisfied: true.
+        - Only mark satisfied: false if the tool returned an error or completely irrelevant data."""),
+        HumanMessage(content=f"User Question: {user_q}\nTool Result: {tool_out}")
     ]
-    # 3. Use the LLM to decide
+    
     decision = llm.with_structured_output(ReflectionDecision).invoke(eval_messages)
 
-    # 4. Update the control flags manually
+    # 5. Update the control flags
     state["reflection_satisfied"] = decision.satisfied
     state["iteration_count"] = state.get("iteration_count", 0) + 1
 
-    # 5. If NOT satisfied, manually append the feedback to the message list
+    # 6. Handle Feedback Loop
     if not decision.satisfied:
-        # We add the nudge as a HumanMessage. 
-        # This is safe because state["messages"] currently ends with the ToolMessage.
         feedback_text = getattr(decision, 'feedback', "The previous result wasn't sufficient.")
-        
         nudge_message = HumanMessage(
             content=f"Reflection Feedback: {feedback_text}. Please try again to answer: {user_q}"
         )
-        
-        # Manually mutating the list
         state["messages"].append(nudge_message)
 
     return state
-
 def personalization_node(state: MainState):
-    # Instead of passing state["messages"] directly, which might be malformed,
-    # we create a clean context for the final response.
+    history = state.get("messages", [])
+    tool_data = state.get("tool_result")
     user_q = state.get("user_message", "")
-    tool_data = state.get("tool_result", "No items found.")
+
+    # 1. Check if the LLM already answered (like a greeting or "Hi")
+    # if there's an AI message in history that ISN'T a tool call, use it!
+    for msg in reversed(history):
+        if msg.type == "ai" and not msg.tool_calls and msg.content:
+            state["response"] = msg.content
+            return state
+
+    # 2. If we actually have tool data, then we do the "Safe Prompt" generation
+    safe_history = [m for m in history if m.type in ["human", "ai"] and not (m.type == "ai" and m.tool_calls)]
     
-    # Construct a clean prompt that doesn't trigger the Role Order check
     prompt = [
-        SystemMessage(content="You are a helpful restaurant assistant. Use the provided menu data to answer the customer."),
-        HumanMessage(content=f"Question: {user_q}\n\nMenu Data Found: {tool_data}")
+        SystemMessage(content="You are a restaurant assistant. Use the provided menu data."),
+        *safe_history[-4:],
+        HumanMessage(content=f"Question: {user_q}\n\nMenu Data: {tool_data}")
     ]
 
-    # Now invoke the LLM with the clean list
     response = llm.invoke(prompt)
-    
-    # Update state with the final answer
     state["response"] = response.content
     return state
-
-
 def reflection_router(state: MainState):
     if state["reflection_satisfied"]:
         return "personalization"
