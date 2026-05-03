@@ -7,7 +7,7 @@ from typing import Any
 from langchain_openai import ChatOpenAI
 
 from app.core.database import SessionLocal, init_db
-from app.my_agent.shcemas.support_agent_schemas import ExtractedComplaintPayload
+from app.my_agent.shcemas.support_agent_schemas import ComplaintValidationDecision, ExtractedComplaintPayload
 from app.repositories.complaint_repository import complaint_repo
 from app.repositories.order_repository import order_repository
 from app.repositories.support_ticket_repository import support_ticket_repository
@@ -42,103 +42,6 @@ def _extract_order_id_from_text(user_message: str) -> int | None:
 	return None
 
 
-def _infer_complaint_type(user_message: str) -> str | None:
-	lowered = user_message.lower()
-	if any(token in lowered for token in ("refund", "money back", "chargeback")):
-		return "refund_request"
-	if any(token in lowered for token in ("late", "delayed", "still not here")):
-		return "late_delivery"
-	if any(token in lowered for token in ("wrong item", "incorrect item", "not what i ordered")):
-		return "wrong_item"
-	if any(token in lowered for token in ("missing item", "missing", "left out")):
-		return "missing_item"
-	if any(token in lowered for token in ("damaged", "cold", "spoiled", "bad quality")):
-		return "damaged_order"
-	if any(token in lowered for token in ("human", "manager", "agent", "person")):
-		return "human_support"
-	if any(token in lowered for token in ("where is my order", "order status", "delivery status")):
-		return "order_status"
-	if any(token in lowered for token in ("complaint", "problem", "issue", "help")):
-		return "general_support"
-	return None
-
-
-def _infer_requested_action(user_message: str) -> str | None:
-	lowered = user_message.lower()
-	if any(token in lowered for token in ("refund", "money back")):
-		return "refund"
-	if any(token in lowered for token in ("replace", "replacement", "send another")):
-		return "replacement"
-	if any(token in lowered for token in ("where is my order", "order status", "delivery status", "track")):
-		return "status_check"
-	if any(token in lowered for token in ("human", "manager", "agent", "person")):
-		return "human_support"
-	if any(token in lowered for token in ("help", "support", "complaint")):
-		return "investigation"
-	return None
-
-
-def _infer_priority(user_message: str, requested_action: str | None) -> str:
-	lowered = user_message.lower()
-	if any(token in lowered for token in ("urgent", "asap", "immediately", "right now")):
-		return "urgent"
-	if requested_action in {"refund", "human_support"}:
-		return "high"
-	if any(token in lowered for token in ("angry", "terrible", "awful", "unacceptable")):
-		return "high"
-	return "medium"
-
-
-def _has_human_support_request(user_message: str) -> bool:
-	lowered = user_message.lower()
-	return any(token in lowered for token in ("human", "manager", "agent", "person", "someone real"))
-
-
-def _is_vague_description(description: str | None) -> bool:
-	if description is None:
-		return True
-	normalized = " ".join(description.lower().split())
-	if normalized in {
-		"i have a problem",
-		"i have an issue",
-		"i need help",
-		"help me",
-		"there is a problem",
-		"there is an issue",
-		"support",
-		"complaint",
-	}:
-		return True
-
-	generic_problem_tokens = ("problem", "issue", "help", "support")
-	specific_issue_tokens = ("cold", "late", "delay", "wrong", "missing", "damaged", "refund", "status", "spoiled", "bad quality")
-	if any(token in normalized for token in generic_problem_tokens) and not any(token in normalized for token in specific_issue_tokens):
-		return True
-
-	return normalized in {
-		"i have a problem",
-		"i have an issue",
-		"i need help",
-		"help me",
-		"there is a problem",
-		"there is an issue",
-		"support",
-		"complaint",
-	}
-
-
-def _should_escalate_to_human(complaint: dict[str, Any]) -> bool:
-	requested_action = complaint.get("requested_action")
-	priority = complaint.get("priority")
-	complaint_type = complaint.get("complaint_type")
-
-	if requested_action == "human_support":
-		return True
-	if priority == "urgent":
-		return True
-	return complaint_type == "human_support"
-
-
 def _serialize_ticket(ticket: Any) -> dict[str, Any]:
 	return {
 		"ticket_id": ticket.ticket_id,
@@ -167,13 +70,21 @@ def _serialize_complaint(complaint: Any) -> dict[str, Any]:
 	}
 
 
-def extract_complaint_from_message(user_message: str, existing_complaint: dict[str, Any] | None = None) -> dict[str, Any]:
+def extract_complaint_from_message(user_message: str, existing_complaint: dict[str, Any] | None = None, conversation_context: str = "") -> dict[str, Any]:
 	base_complaint = _normalize_complaint(existing_complaint)
+	history_section = (
+		f"\nConversation history (for context):\n{conversation_context}\n"
+		if conversation_context.strip()
+		else ""
+	)
 	prompt = (
-		"Extract a structured restaurant support complaint from the user message. "
-		"Return complaint_type, description, order_id when stated, priority, requested_action, and whether the user needs a human.\n\n"
+		"You are extracting a restaurant support complaint from a customer message.\n"
+		"Use the conversation history to resolve any references to previous messages.\n"
+		"Return: complaint_type, a concise description of what went wrong, order_id (if stated), "
+		"priority, requested_action, and whether the customer needs a human agent.\n\n"
+		f"{history_section}"
 		f"Existing complaint context: {base_complaint}\n"
-		f"User message: {user_message}"
+		f"Customer message: {user_message}"
 	)
 
 	try:
@@ -182,61 +93,78 @@ def extract_complaint_from_message(user_message: str, existing_complaint: dict[s
 	except Exception:
 		extracted = {}
 
-	if not extracted.get("complaint_type"):
-		extracted["complaint_type"] = _infer_complaint_type(user_message)
-	if not extracted.get("requested_action"):
-		extracted["requested_action"] = _infer_requested_action(user_message)
+	# Reliable regex fallback for order ID only — everything else is LLM territory
 	if extracted.get("order_id") is None:
 		extracted["order_id"] = _extract_order_id_from_text(user_message)
-	if not _has_human_support_request(user_message):
-		if extracted.get("complaint_type") == "human_support":
-			extracted["complaint_type"] = _infer_complaint_type(user_message)
-		if extracted.get("requested_action") == "human_support":
-			extracted["requested_action"] = _infer_requested_action(user_message)
-		extracted["needs_human"] = False
+
+	# Use user message as description only when LLM returned nothing at all
 	if not extracted.get("description"):
 		extracted["description"] = user_message.strip() or None
-	if not extracted.get("priority"):
-		extracted["priority"] = _infer_priority(user_message, extracted.get("requested_action"))
-	if extracted.get("needs_human") is None:
-		extracted["needs_human"] = _has_human_support_request(user_message)
 
-	merged = _normalize_complaint({**base_complaint, **{key: value for key, value in extracted.items() if value is not None}})
+	merged = _normalize_complaint({**base_complaint, **{k: v for k, v in extracted.items() if v is not None}})
 	return merged
 
 
-def validate_complaint(extracted_complaint: dict[str, Any] | None) -> dict[str, Any]:
+def validate_complaint(
+	extracted_complaint: dict[str, Any] | None,
+	user_message: str = "",
+	conversation_context: str = "",
+) -> dict[str, Any]:
 	complaint = _normalize_complaint(extracted_complaint)
-	missing_fields: list[str] = []
 
-	if not (complaint.get("complaint_type") or "").strip():
-		missing_fields.append("complaint_type")
-	if not (complaint.get("description") or "").strip():
-		missing_fields.append("description")
-	elif _is_vague_description(complaint.get("description")):
-		missing_fields.append("what happened")
+	history_section = (
+		f"\nConversation history (for context):\n{conversation_context}\n"
+		if conversation_context.strip()
+		else ""
+	)
+	prompt = (
+		"You are validating a restaurant support complaint before creating a ticket.\n\n"
+		"Rules:\n"
+		"- requires_order_id = True for ANY complaint involving a delivery person, a specific order, "
+		"or a delivery incident (rude delivery person, late delivery, damaged/wrong/missing item, refund request).\n"
+		"  Reason: we need the order ID to identify which delivery or order is being complained about.\n"
+		"- requires_order_id = False ONLY if the complaint has zero connection to any specific order "
+		"(e.g. rude dine-in waiter with no order reference, website bug, account issue).\n"
+		"- needs_human = True only if the customer explicitly asks for a human/manager, or the situation is a safety emergency.\n"
+		"- is_description_vague = True if the message gives no specific detail (e.g. 'I have a problem', 'I need help').\n"
+		"- Fill in complaint_type, priority, and requested_action if not already set.\n\n"
+		f"{history_section}"
+		f"Extracted complaint so far: {complaint}\n"
+		f"Customer message: {user_message}"
+	)
 
-	requires_order_reference = complaint.get("requested_action") in {"refund", "replacement", "status_check"} or complaint.get("complaint_type") in {
-		"refund_request",
-		"late_delivery",
-		"wrong_item",
-		"missing_item",
-		"damaged_order",
-		"order_status",
-	}
-	if requires_order_reference and complaint.get("order_id") is None:
-		missing_fields.append("order_id")
+	try:
+		decision: ComplaintValidationDecision = (
+			_get_llm().with_structured_output(ComplaintValidationDecision).invoke(prompt)
+		)
+		# Fill in inferred fields only where not already set by extraction
+		if not complaint.get("complaint_type") and decision.complaint_type:
+			complaint["complaint_type"] = decision.complaint_type
+		if not complaint.get("priority"):
+			complaint["priority"] = decision.priority
+		if not complaint.get("requested_action") and decision.requested_action:
+			complaint["requested_action"] = decision.requested_action
+		complaint["needs_human"] = decision.needs_human
 
-	if complaint.get("priority") not in {"low", "medium", "high", "urgent"}:
-		complaint["priority"] = "medium"
-
-	complaint["needs_human"] = _should_escalate_to_human(complaint)
+		missing_fields: list[str] = []
+		if decision.is_description_vague:
+			missing_fields.append("what happened")
+		if decision.requires_order_id and complaint.get("order_id") is None:
+			missing_fields.append("order_id")
+	except Exception:
+		# Hard fallback — require description if nothing useful was captured
+		missing_fields = []
+		if not (complaint.get("description") or "").strip():
+			missing_fields.append("what happened")
+		if complaint.get("priority") not in {"low", "medium", "high", "urgent"}:
+			complaint["priority"] = "medium"
+		complaint.setdefault("needs_human", False)
 
 	return {
 		"is_complete": not missing_fields,
 		"missing_fields": missing_fields,
 		"normalized_complaint": complaint,
-		"needs_human": complaint["needs_human"],
+		"needs_human": complaint.get("needs_human", False),
 	}
 
 

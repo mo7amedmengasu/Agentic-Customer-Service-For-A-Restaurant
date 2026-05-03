@@ -2,15 +2,11 @@ from langchain_core.tools import tool
 from app.repositories.menu_repository import MenuRepository
 from app.models.menu_item import MenuItem
 from app.core.database import SessionLocal
-from app.my_agent.tools.faq_tools import get_embedding 
+from app.my_agent.tools.faq_tools import get_embedding
 from app.core.config import settings
-from langchain_openai import ChatOpenAI
-from openai import OpenAI
+
 # Using the repository instance
 menu_repository = MenuRepository(MenuItem)
-
-
-client=OpenAI(api_key=settings.OPENAI_API_KEY)
 
 def create_menu_tools():
 
@@ -35,8 +31,10 @@ def create_menu_tools():
     @tool
     def search_menu_by_keyword(keyword: str):
         """
-        Search the menu for items matching a keyword in their name or description.
-        Use this for keyword-specific queries like 'chicken', 'pasta', or 'vegan'.
+        Search the menu for items where the keyword appears LITERALLY in the item name or description.
+        Only use this when the user mentions a specific ingredient or dish type that would appear word-for-word
+        in a menu listing (e.g. 'chicken', 'pasta', 'pizza', 'chocolate', 'vegan').
+        Do NOT use for general food categories like 'meat', 'protein', 'healthy' — use search_menu_semantically instead.
         """
         with SessionLocal() as db:
             items = menu_repository.search_items_by_keyword(db, keyword=keyword)
@@ -55,31 +53,28 @@ def create_menu_tools():
     @tool
     def search_menu_semantically(query: str):
         """
-        Search for items by flavor, mood, or craving (e.g., 'something spicy', 'comfort food').
+        Search for menu items that best match a food preference, craving, mood, or concept.
+        Use this when:
+        - The user expresses a general food preference (e.g. 'I like meat', 'I enjoy grilled food', 'I want something sweet')
+        - The exact word may NOT appear in item names/descriptions (e.g. 'meat' won't literally appear in 'Burger')
+        - The user describes a mood or craving ('comfort food', 'something light', 'filling meal')
+        This tool uses semantic similarity — always prefer it over search_menu_by_keyword for preference queries.
         """
         with SessionLocal() as db:
-            items = menu_repository.get_all_items(db)
-            if not items: 
-                return "The menu is currently empty."
-
-            # Prepare text for batch embedding
-            texts = [f"{i.item_name}: {i.item_description or ''}" for i in items]
-            
-            # Batch API Call for efficiency
-            response = client.embeddings.create(model="text-embedding-3-small", input=texts)
-            menu_embeddings = [d.embedding for d in response.data]
             user_embedding = get_embedding(query)
+            matches = menu_repository.find_top_semantic_matches_from_db(db, user_embedding)
 
-            # Mathematical similarity ranking via repository
-            matches = menu_repository.find_top_semantic_matches(user_embedding, items, menu_embeddings)
-            
+            if not matches:
+                return "No menu items matched your preference."
+
             return [
                 {
                     "id": m[1].item_id,
-                    "name": m[1].item_name, 
-                    "price": float(m[1].item_price), 
-                    "description": m[1].item_description
-                } for m in matches
+                    "name": m[1].item_name,
+                    "price": float(m[1].item_price),
+                    "description": m[1].item_description,
+                }
+                for m in matches
             ]
 
     @tool
@@ -100,7 +95,27 @@ def create_menu_tools():
                 } for i in items
             ]
 
+    @tool
+    def get_all_menu_items():
+        """
+        Retrieve all available items on the menu.
+        Use this when the user asks what is on the menu, what items are available, or wants a full menu listing.
+        """
+        with SessionLocal() as db:
+            items = menu_repository.get_all_items(db)
+            if not items:
+                return "The menu is currently empty."
+            return [
+                {
+                    "id": i.item_id,
+                    "name": i.item_name,
+                    "price": float(i.item_price),
+                    "description": i.item_description
+                } for i in items
+            ]
+
     return [
+        get_all_menu_items,
         get_menu_item_by_name,
         search_menu_by_keyword,
         search_menu_semantically,

@@ -1,13 +1,8 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Literal
+from typing import Any
 
-from langchain_openai import ChatOpenAI
-
-from pydantic import BaseModel, Field
-
-from app.my_agent.shcemas.support_agent_schemas import ExtractedComplaintPayload, SupportReasoningDecision
 from app.my_agent.states.state import MainState
 from app.my_agent.tools.support_agent_tools import (
 	create_support_ticket,
@@ -17,21 +12,6 @@ from app.my_agent.tools.support_agent_tools import (
 	get_ticket_status,
 	validate_complaint,
 )
-
-
-ALLOWED_NEXT_STEPS = {
-	"extract_complaint",
-	"validate_complaint",
-	"ask_missing_info",
-	"check_order_context",
-	"create_ticket",
-	"escalate_to_human",
-	"final_response",
-}
-
-
-def _get_llm() -> ChatOpenAI:
-	return ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 
 def _normalize_complaint(extracted_complaint: dict[str, Any] | None) -> dict[str, Any]:
@@ -64,65 +44,14 @@ def _needs_order_context(complaint: dict[str, Any]) -> bool:
 	)
 
 
-def _coerce_next_step(state: MainState, proposed_step: str | None) -> str:
-	complaint = _normalize_complaint(state.get("extracted_complaint"))
-	tool_result = state.get("tool_result") or {}
-	missing_fields = state.get("missing_fields") or []
-	order_context = tool_result.get("order_context") or {}
-
-	if missing_fields:
-		return "ask_missing_info"
-	if order_context.get("error") in {"order_not_found", "order_not_owned_by_customer"}:
-		return "final_response"
-	if complaint.get("needs_human"):
-		return "escalate_to_human"
-	if tool_result.get("ticket") or tool_result.get("status") == "open":
-		return "final_response"
-	if _needs_order_context(complaint) and "order_context" not in tool_result:
-		return "check_order_context"
-	if tool_result.get("order_context", {}).get("found") and complaint.get("requested_action") == "status_check":
-		return "final_response"
-	if complaint.get("complaint_type") and complaint.get("description"):
-		return proposed_step if proposed_step in ALLOWED_NEXT_STEPS else "create_ticket"
-	return proposed_step if proposed_step in ALLOWED_NEXT_STEPS else "extract_complaint"
-
-
-def _fallback_reasoning(state: MainState) -> dict[str, Any]:
-	complaint = _normalize_complaint(state.get("extracted_complaint"))
-	tool_result = state.get("tool_result") or {}
-	order_context = tool_result.get("order_context") or {}
-
-	if _is_ticket_status_request(state.get("user_message") or ""):
-		return {"next_step": "final_response"}
-	if not complaint.get("complaint_type") and not complaint.get("description"):
-		return {"next_step": "extract_complaint"}
-	if state.get("missing_fields"):
-		return {"next_step": "ask_missing_info"}
-	if order_context.get("error") in {"order_not_found", "order_not_owned_by_customer"}:
-		return {"next_step": "final_response"}
-	if complaint.get("needs_human"):
-		return {"next_step": "escalate_to_human"}
-	if _needs_order_context(complaint) and "order_context" not in tool_result:
-		return {"next_step": "check_order_context"}
-	if tool_result.get("order_context", {}).get("found") and complaint.get("requested_action") == "status_check":
-		return {"next_step": "final_response"}
-	return {"next_step": "create_ticket"}
-
-
 def _complaint_empathy() -> str:
 	return "I understand this was frustrating, and I want to help you sort it out."
 
 
-def _is_missing_info_follow_up(state: MainState) -> bool:
-	missing_fields = state.get("missing_fields") or []
-	if not missing_fields:
-		return False
-	messages = state.get("messages") or []
-	return any(message.get("role") == "assistant" for message in messages)
-
-
 def support_reasoning_node(state: MainState) -> dict[str, Any]:
 	user_message = state.get("user_message") or ""
+
+	# Handle ticket status requests inline — no complaint extraction needed
 	if _is_ticket_status_request(user_message):
 		ticket = get_ticket_status(ticket_id=_extract_ticket_id(user_message), customer_id=state.get("customer_id"))
 		if ticket is None or ticket.get("error") == "ticket_not_found":
@@ -141,52 +70,28 @@ def support_reasoning_node(state: MainState) -> dict[str, Any]:
 			"response": f"Ticket {ticket['ticket_id']} is currently {ticket['status']} with priority {ticket['priority']}.",
 		}
 
-	if _is_missing_info_follow_up(state):
-		return {
-			"next_step": "extract_complaint",
-			"response": None,
-		}
+	# For all other support requests always extract the complaint first
+	return {"next_step": "extract_complaint"}
 
-	prompt = (
-		"You are the support orchestration decision maker for a restaurant customer support workflow. "
-		"Pick exactly one next_step from the allowed values based on the state. "
-		"You must not invent order status, ticket IDs, refund status, or delivery status. Only rely on tool output for those details. "
-		"Keep the tone calm and reassuring when you provide a direct response.\n\n"
-		f"Allowed next steps: {sorted(ALLOWED_NEXT_STEPS)}\n"
-		f"User message: {state.get('user_message')}\n"
-		f"Messages: {state.get('messages')}\n"
-		f"Extracted complaint: {state.get('extracted_complaint')}\n"
-		f"Tool result: {state.get('tool_result')}\n"
-		f"Missing fields: {state.get('missing_fields')}\n"
-		f"Needs human: {state.get('needs_human')}"
-	)
 
-	try:
-		decision = _get_llm().with_structured_output(SupportReasoningDecision).invoke(prompt)
-		result = decision.model_dump(exclude_none=True)
-	except Exception:
-		result = _fallback_reasoning(state)
-
-	result["next_step"] = _coerce_next_step(state, result.get("next_step"))
-	tool_result = state.get("tool_result") or {}
-	complaint = _normalize_complaint(state.get("extracted_complaint"))
-	if result["next_step"] == "final_response" and not result.get("response"):
-		order_context = tool_result.get("order_context")
-		if order_context and order_context.get("found") and complaint.get("requested_action") == "status_check":
-			order_status = order_context.get("order_status")
-			delivery_status = order_context.get("delivery_status")
-			delivery_text = f" Delivery status: {delivery_status}." if delivery_status else ""
-			result["response"] = f"Order {order_context['order_id']} is currently {order_status}.{delivery_text}"
-		elif tool_result.get("ticket"):
-			ticket = tool_result["ticket"]
-			result["response"] = f"I've logged your issue as ticket {ticket['ticket_id']}. Its current status is {ticket['status']}."
-	return result
+def _build_history_context(messages: list) -> str:
+	lines = []
+	for m in (messages or []):
+		if hasattr(m, "type"):
+			role = "Customer" if m.type == "human" else "Assistant"
+			lines.append(f"{role}: {m.content}")
+		elif isinstance(m, dict):
+			role = "Customer" if m.get("role") == "user" else "Assistant"
+			lines.append(f"{role}: {m.get('content', '')}")
+	return "\n".join(lines[-10:])
 
 
 def extract_complaint_node(state: MainState) -> dict[str, Any]:
+	history_context = _build_history_context(state.get("messages", []))
 	complaint = extract_complaint_from_message(
 		state.get("user_message") or "",
 		existing_complaint=state.get("extracted_complaint"),
+		conversation_context=history_context,
 	)
 	return {
 		"extracted_complaint": complaint,
@@ -196,13 +101,31 @@ def extract_complaint_node(state: MainState) -> dict[str, Any]:
 
 
 def validate_complaint_node(state: MainState) -> dict[str, Any]:
-	validation = validate_complaint(state.get("extracted_complaint"))
+	history_context = _build_history_context(state.get("messages", []))
+	validation = validate_complaint(
+		state.get("extracted_complaint"),
+		user_message=state.get("user_message") or "",
+		conversation_context=history_context,
+	)
+	complaint = validation["normalized_complaint"]
+	missing_fields = validation["missing_fields"]
+	needs_human = validation["needs_human"]
+
+	if missing_fields:
+		next_step = "ask_missing_info"
+	elif needs_human:
+		next_step = "escalate_to_human"
+	elif _needs_order_context(complaint):
+		next_step = "check_order_context"
+	else:
+		next_step = "create_ticket"
+
 	return {
-		"extracted_complaint": validation["normalized_complaint"],
-		"missing_fields": validation["missing_fields"],
-		"needs_human": validation["needs_human"],
+		"extracted_complaint": complaint,
+		"missing_fields": missing_fields,
+		"needs_human": needs_human,
 		"tool_result": {"validation": validation},
-		"next_step": "ask_missing_info" if validation["missing_fields"] else "check_order_context",
+		"next_step": next_step,
 	}
 
 
@@ -227,9 +150,16 @@ def ask_missing_complaint_info_node(state: MainState) -> dict[str, Any]:
 			"response": "I can help with that. Please tell me what happened, and include the order ID if the issue is tied to a specific order.",
 			"next_step": "final_response",
 		}
-	joined = ", ".join(missing_fields) if missing_fields else "a few complaint details"
+	joined = " and ".join(missing_fields) if missing_fields else "a few more details"
+	field_prompts = {
+		"order_id": "the order ID this complaint is about (you can find it in your order history)",
+		"complaint_type": "what type of issue this is (e.g. wrong item, late delivery, rude staff)",
+		"description": "a brief description of what happened",
+		"what happened": "a bit more detail about what happened",
+	}
+	prompt = field_prompts.get(missing_fields[0], joined) if missing_fields else joined
 	return {
-		"response": f"I can help, but I still need {joined} before I can move this forward.",
+		"response": f"I'm sorry to hear that! To make sure I handle this properly, could you share {prompt}?",
 		"next_step": "final_response",
 	}
 
@@ -294,10 +224,22 @@ def support_response_node(state: MainState) -> dict[str, Any]:
 		return {"response": "That order is not linked to your account, so I can't share details for that complaint."}
 	if tool_result.get("escalated"):
 		ticket = tool_result.get("ticket") or {}
-		return {"response": f"{_complaint_empathy()} I've escalated this to a human support agent under ticket {ticket.get('ticket_id')}. They will review it as {ticket.get('status')} priority {ticket.get('priority')}."}
+		return {
+			"response": (
+				f"{_complaint_empathy()} I've escalated your complaint to a human support agent "
+				f"under ticket **#{ticket.get('ticket_id')}**. "
+				"Someone from our team will reach out to you shortly. 😊"
+			)
+		}
 	if tool_result.get("ticket"):
 		ticket = tool_result["ticket"]
-		return {"response": f"{_complaint_empathy()} I created support ticket {ticket['ticket_id']} for you. Its status is {ticket['status']} and priority is {ticket['priority']}."}
+		return {
+			"response": (
+				f"{_complaint_empathy()} I've opened support ticket **#{ticket['ticket_id']}** for you. "
+				"Your complaint is important to us and we'll do our best to resolve it as soon as possible. "
+				f"You can reference ticket **#{ticket['ticket_id']}** if you need to follow up. 😊"
+			)
+		}
 	if order_context.get("found"):
 		return {"response": f"I checked order {order_context['order_id']}. It is currently {order_context['order_status']}" + (f" and the delivery status is {order_context['delivery_status']}." if order_context.get("delivery_status") else ".")}
 	return {"response": "Please tell me what happened, and I’ll help you with it."}

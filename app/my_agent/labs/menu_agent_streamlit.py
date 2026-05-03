@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+
 import streamlit as st
 from app.my_agent.agents.menu_agent import build_menu_graph
 from langchain_core.messages import HumanMessage, AIMessage

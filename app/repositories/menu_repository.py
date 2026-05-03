@@ -3,7 +3,7 @@ from __future__ import annotations
 from difflib import get_close_matches
 from typing import List, Optional
 
-from sqlalchemy import Tuple, func
+from sqlalchemy import Tuple, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.menu_item import MenuItem
@@ -84,23 +84,40 @@ class MenuRepository(BaseRepository[MenuItem]):
         matching_items = (
             db.query(self.model)
             .filter(
-                func.lower(self.model.item_name).contains(normalized_keyword)
+                or_(
+                    func.lower(self.model.item_name).contains(normalized_keyword),
+                    func.lower(func.coalesce(self.model.item_description, "")).contains(normalized_keyword),
+                )
             )
             .all()
         )
 
         return matching_items
     def get_items_by_category(self, db: Session, *, category: str) -> List[MenuItem]:
-   
-
         if not category or not category.strip():
             return []
 
         normalized_category = category.strip().lower()
 
+        if normalized_category in {
+            "all",
+            "all items",
+            "entire menu",
+            "full menu",
+            "menu",
+            "items",
+            "everything",
+        }:
+            return self.get_all_items(db)
+
         items = (
             db.query(self.model)
-            .filter(func.lower(self.model.category) == normalized_category)
+            .filter(
+                or_(
+                    func.lower(self.model.item_name).contains(normalized_category),
+                    func.lower(func.coalesce(self.model.item_description, "")).contains(normalized_category),
+                )
+            )
             .all()
         )
 
@@ -128,7 +145,39 @@ class MenuRepository(BaseRepository[MenuItem]):
                     scored_items.append((score, item))
         
             scored_items.sort(key=lambda x: x[0], reverse=True)
-            return scored_items[:top_n]    
+            return scored_items[:top_n]
+
+    def find_top_semantic_matches_from_db(
+        self,
+        db: Session,
+        user_embedding: List[float],
+        top_n: int = 4,
+    ) -> List[tuple]:
+        """Use embeddings stored in the DB rows — no external API call needed at query time.
+        Always returns top_n results (no hard threshold) so the LLM can judge relevance.
+        """
+        import json as _json
+
+        items = db.query(self.model).filter(self.model.item_embedding.isnot(None)).all()
+        if not items:
+            return []
+
+        user_vec = np.array(user_embedding)
+        scored: list[tuple[float, MenuItem]] = []
+
+        for item in items:
+            try:
+                item_vec = np.array(_json.loads(item.item_embedding))
+                score = float(
+                    np.dot(user_vec, item_vec)
+                    / (np.linalg.norm(user_vec) * np.linalg.norm(item_vec))
+                )
+                scored.append((score, item))
+            except Exception:
+                continue
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored[:top_n]
 
 
 menu_repository = MenuRepository(MenuItem)

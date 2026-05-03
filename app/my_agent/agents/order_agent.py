@@ -17,7 +17,14 @@ from app.my_agent.states.state import MainState
 
 
 def route_order_agent(state: MainState) -> str:
-	return state.get("next_step", "final_response")
+	next_step = state.get("next_step", "final_response")
+	allowed = {"extract_order", "modify_order", "place_order", "final_response"}
+	return next_step if next_step in allowed else "final_response"
+
+
+def route_after_validate(state: MainState) -> str:
+	"""Deterministic routing after validate_order: ready → calculate, else → ask missing."""
+	return "calculate_summary" if state.get("order_ready") else "ask_missing_info"
 
 
 def build_order_agent_graph():
@@ -39,21 +46,29 @@ def build_order_agent_graph():
 		route_order_agent,
 		{
 			"extract_order": "extract_order",
-			"validate_order": "validate_order",
-			"ask_missing_info": "ask_missing_info",
-			"calculate_summary": "calculate_summary",
-			"ask_confirmation": "ask_confirmation",
 			"modify_order": "modify_order",
 			"place_order": "place_order",
 			"final_response": "final_response",
 		},
 	)
 
-	graph.add_edge("extract_order", "order_reasoning")
-	graph.add_edge("validate_order", "order_reasoning")
-	graph.add_edge("ask_missing_info", "final_response")
-	graph.add_edge("calculate_summary", "order_reasoning")
+	# Deterministic: always validate right after extraction
+	graph.add_edge("extract_order", "validate_order")
+
+	# Deterministic: route from validation without LLM involvement
+	graph.add_conditional_edges(
+		"validate_order",
+		route_after_validate,
+		{
+			"calculate_summary": "calculate_summary",
+			"ask_missing_info": "ask_missing_info",
+		},
+	)
+
+	# Deterministic: always go to confirmation after calculating total
+	graph.add_edge("calculate_summary", "ask_confirmation")
 	graph.add_edge("ask_confirmation", "final_response")
+	graph.add_edge("ask_missing_info", "final_response")
 	graph.add_edge("modify_order", "validate_order")
 	graph.add_edge("place_order", "final_response")
 	graph.add_edge("final_response", END)

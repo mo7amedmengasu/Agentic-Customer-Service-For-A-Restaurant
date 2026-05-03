@@ -45,7 +45,12 @@ def find_best_faq(question:str, db):
             best_faq = faq
     return best_faq, best_score
 
-def generate_answer(question: str, faq_answer: str) -> str:
+def generate_answer(question: str, faq_answer: str, conversation_context: str = "") -> str:
+    history_section = (
+        f"\n\nCONVERSATION HISTORY (for context only):\n{conversation_context}"
+        if conversation_context.strip()
+        else ""
+    )
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -55,19 +60,14 @@ def generate_answer(question: str, faq_answer: str) -> str:
                     "You are a helpful restaurant assistant. "
                     "Use the provided FAQ answer to respond. "
                     "You may rephrase it to sound natural and user-friendly, "
-                    "but do not change the meaning."
+                    "but do not change the meaning. "
+                    "Use the conversation history to understand follow-up questions or references to earlier messages."
+                    + history_section
                 )
             },
             {
                 "role": "user",
-                "content": f"""
-User question: {question}
-
-FAQ answer:
-{faq_answer}
-
-Return a natural response to the user.
-"""
+                "content": f"User question: {question}\n\nFAQ answer:\n{faq_answer}\n\nReturn a natural response to the user."
             }
         ]
     )

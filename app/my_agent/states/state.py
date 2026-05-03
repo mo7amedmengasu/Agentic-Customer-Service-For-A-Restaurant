@@ -15,6 +15,7 @@ class MainState(TypedDict):
     next_step: str | None
     order_ready: bool | None
     order_confirmed: bool | None
+    order_awaiting_confirmation: bool | None
     missing_fields: list[str] | None
     invalid_items: list[dict[str, Any]] | None
     requires_follow_up: bool | None
@@ -24,3 +25,5 @@ class MainState(TypedDict):
     reflection_satisfied: bool | None
     iteration_count: int
     max_iterations: int
+    # Orchestrator fields
+    clarification_attempts: int

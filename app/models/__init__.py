@@ -7,6 +7,7 @@ from .complaint import Complaint
 from .support_ticket import SupportTicket
 from .transaction import Transaction
 from .faq import FAQ
+from .chat_session import ChatSession, ChatMessage
 
 __all__ = [
     "User",
@@ -18,5 +19,6 @@ __all__ = [
     "SupportTicket",
     "Transaction",
     "FAQ",
-
+    "ChatSession",
+    "ChatMessage",
 ]

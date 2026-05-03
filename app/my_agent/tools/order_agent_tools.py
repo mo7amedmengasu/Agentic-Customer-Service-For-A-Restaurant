@@ -176,8 +176,13 @@ def update_extracted_order(old_order: dict[str, Any], user_message: str) -> dict
 	base_order = _normalize_order(old_order)
 
 	prompt = (
-		"Update the existing restaurant order based on the user message. "
-		"Only include explicit changes. Do not remove existing items unless the user clearly asks.\n\n"
+		"Update the existing restaurant order based on the user message.\n\n"
+		"IMPORTANT RULES:\n"
+		"- 'remove N [item]' (e.g., 'remove 1 burger', 'remove 2 pizzas') → use action='change_quantity' "
+		"and set quantity to (current_quantity - N). Do NOT use action='remove' for these cases.\n"
+		"- 'remove [item]' with no number, or 'remove all [item]' → use action='remove' (removes item completely).\n"
+		"- Only remove items completely if the user clearly wants none left.\n"
+		"- Do not change items that are not explicitly mentioned.\n\n"
 		f"Existing order: {base_order}\n"
 		f"User message: {user_message}"
 	)

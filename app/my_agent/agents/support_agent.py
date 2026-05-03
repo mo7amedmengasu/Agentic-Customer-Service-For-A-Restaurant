@@ -16,7 +16,23 @@ from app.my_agent.states.state import MainState
 
 
 def route_support_agent(state: MainState) -> str:
-	return state.get("next_step", "final_response")
+	next_step = state.get("next_step", "final_response")
+	allowed = {"extract_complaint", "final_response"}
+	return next_step if next_step in allowed else "final_response"
+
+
+def route_after_validate(state: MainState) -> str:
+	"""Deterministic routing after validate_complaint — no LLM involved."""
+	next_step = state.get("next_step", "create_ticket")
+	allowed = {"ask_missing_info", "escalate_to_human", "check_order_context", "create_ticket"}
+	return next_step if next_step in allowed else "create_ticket"
+
+
+def route_after_check_order(state: MainState) -> str:
+	"""Deterministic routing after check_order_context."""
+	next_step = state.get("next_step", "final_response")
+	allowed = {"create_ticket", "final_response"}
+	return next_step if next_step in allowed else "final_response"
 
 
 def build_support_agent_graph():
@@ -32,24 +48,43 @@ def build_support_agent_graph():
 	graph.add_node("final_response", support_response_node)
 
 	graph.set_entry_point("support_reasoning")
+
+	# support_reasoning only routes to extract_complaint or final_response (ticket-status path)
 	graph.add_conditional_edges(
 		"support_reasoning",
 		route_support_agent,
 		{
 			"extract_complaint": "extract_complaint",
-			"validate_complaint": "validate_complaint",
-			"ask_missing_info": "ask_missing_info",
-			"check_order_context": "check_order_context",
-			"create_ticket": "create_ticket",
-			"escalate_to_human": "escalate_to_human",
 			"final_response": "final_response",
 		},
 	)
 
-	graph.add_edge("extract_complaint", "support_reasoning")
-	graph.add_edge("validate_complaint", "support_reasoning")
+	# Deterministic: always validate right after extracting
+	graph.add_edge("extract_complaint", "validate_complaint")
+
+	# Deterministic: route based on what validate_complaint_node decided
+	graph.add_conditional_edges(
+		"validate_complaint",
+		route_after_validate,
+		{
+			"ask_missing_info": "ask_missing_info",
+			"escalate_to_human": "escalate_to_human",
+			"check_order_context": "check_order_context",
+			"create_ticket": "create_ticket",
+		},
+	)
+
+	# Deterministic: route based on what check_order_context_node decided
+	graph.add_conditional_edges(
+		"check_order_context",
+		route_after_check_order,
+		{
+			"create_ticket": "create_ticket",
+			"final_response": "final_response",
+		},
+	)
+
 	graph.add_edge("ask_missing_info", "final_response")
-	graph.add_edge("check_order_context", "support_reasoning")
 	graph.add_edge("create_ticket", "final_response")
 	graph.add_edge("escalate_to_human", "final_response")
 	graph.add_edge("final_response", END)

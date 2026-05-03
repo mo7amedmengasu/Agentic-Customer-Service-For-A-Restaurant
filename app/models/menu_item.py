@@ -11,6 +11,7 @@ class MenuItem(Base):
     item_description = Column(Text)
     item_image = Column(String(255))
     item_price = Column(Numeric(10, 2))
-    
+    item_embedding = Column(Text, nullable=True)  # JSON-serialised float list for semantic search
+
     # Relationships
     order_items = relationship("OrderItem", back_populates="menu_item")
