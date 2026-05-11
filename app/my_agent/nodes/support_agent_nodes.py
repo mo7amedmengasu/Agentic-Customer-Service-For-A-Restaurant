@@ -3,6 +3,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+
+from app.core.config import settings
 from app.my_agent.states.state import MainState
 from app.my_agent.tools.support_agent_tools import (
 	create_support_ticket,
@@ -12,6 +16,19 @@ from app.my_agent.tools.support_agent_tools import (
 	get_ticket_status,
 	validate_complaint,
 )
+
+_llm = ChatOpenAI(api_key=settings.OPENAI_API_KEY, model="gpt-4o-mini", temperature=0.3)
+
+_SUPPORT_SYSTEM = """You are an empathetic customer support agent for a restaurant, chatting live with the customer.
+Your job is to acknowledge the customer's issue with genuine care, explain what action is being taken,
+and reassure them. Always:
+- Respond conversationally — you are in a live chat, NOT writing an email.
+- Do NOT use email conventions: no "Dear Customer", no "Warm regards", no sign-off, no "Sincerely", no "[Your Name]".
+- Start your reply naturally, e.g. "Oh, I'm really sorry to hear that!" or "That's not okay at all — let me help you sort this out."
+- Apologise sincerely and reference the specific problem the customer mentioned.
+- Keep responses short and to the point (2–4 sentences max unless more detail is genuinely needed).
+- Mention keywords that are relevant to the issue: refund, complaint, ticket, resolve, help, etc. where appropriate.
+- Do NOT invent order details that were not provided to you."""
 
 
 def _normalize_complaint(extracted_complaint: dict[str, Any] | None) -> dict[str, Any]:
@@ -132,6 +149,8 @@ def validate_complaint_node(state: MainState) -> dict[str, Any]:
 def ask_missing_complaint_info_node(state: MainState) -> dict[str, Any]:
 	missing_fields = state.get("missing_fields") or []
 	complaint = _normalize_complaint(state.get("extracted_complaint"))
+	user_message = state.get("user_message") or ""
+
 	if "what happened" in missing_fields:
 		if complaint.get("order_id") is not None:
 			order_context = get_order_context(state.get("customer_id"), complaint.get("order_id"))
@@ -141,25 +160,31 @@ def ask_missing_complaint_info_node(state: MainState) -> dict[str, Any]:
 					"tool_result": {**(state.get("tool_result") or {}), "order_context": order_context},
 					"next_step": "final_response",
 				}
-			return {
-				"response": f"I have order {complaint['order_id']}. Please tell me what happened with it.",
-				"tool_result": {**(state.get("tool_result") or {}), "order_context": order_context},
-				"next_step": "final_response",
-			}
-		return {
-			"response": "I can help with that. Please tell me what happened, and include the order ID if the issue is tied to a specific order.",
-			"next_step": "final_response",
-		}
-	joined = " and ".join(missing_fields) if missing_fields else "a few more details"
+
 	field_prompts = {
 		"order_id": "the order ID this complaint is about (you can find it in your order history)",
 		"complaint_type": "what type of issue this is (e.g. wrong item, late delivery, rude staff)",
 		"description": "a brief description of what happened",
 		"what happened": "a bit more detail about what happened",
 	}
-	prompt = field_prompts.get(missing_fields[0], joined) if missing_fields else joined
+	missing_desc = " and ".join(
+		field_prompts.get(f, f) for f in missing_fields
+	) if missing_fields else "a few more details"
+
+	prompt = [
+		SystemMessage(content=_SUPPORT_SYSTEM),
+		HumanMessage(content=(
+			f"Customer message: \"{user_message}\"\n\n"
+			f"Complaint extracted so far: {complaint}\n\n"
+			f"We still need the following from the customer to proceed: {missing_desc}.\n\n"
+			"Write a short, empathetic reply that: (1) sincerely acknowledges their complaint and "
+			"references the specific issue they mentioned (wrong food, cold food, late delivery, etc.), "
+			"(2) apologises for the inconvenience, and (3) politely asks for the missing information."
+		)),
+	]
+	response = _llm.invoke(prompt)
 	return {
-		"response": f"I'm sorry to hear that! To make sure I handle this properly, could you share {prompt}?",
+		"response": response.content,
 		"next_step": "final_response",
 	}
 

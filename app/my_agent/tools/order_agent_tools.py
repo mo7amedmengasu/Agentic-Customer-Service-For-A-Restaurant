@@ -132,7 +132,7 @@ def check_missing_order_fields(extracted_order: dict[str, Any]) -> dict[str, Any
 				missing_fields.append(f"quantity for {label}")
 
 	order_type = order.get("order_type")
-	if has_items and order_type not in {"pickup", "delivery"}:
+	if has_items and order_type not in {"pickup", "delivery", "dine_in"}:
 		missing_fields.append("order_type")
 
 	if order_type == "delivery" and not (order.get("delivery_address") or "").strip():
@@ -182,7 +182,11 @@ def update_extracted_order(old_order: dict[str, Any], user_message: str) -> dict
 		"and set quantity to (current_quantity - N). Do NOT use action='remove' for these cases.\n"
 		"- 'remove [item]' with no number, or 'remove all [item]' → use action='remove' (removes item completely).\n"
 		"- Only remove items completely if the user clearly wants none left.\n"
-		"- Do not change items that are not explicitly mentioned.\n\n"
+		"- Do not change items that are not explicitly mentioned.\n"
+		"- If the user says they want to change/update the order type but does NOT specify the new type "
+		"(e.g. 'I need to change the type', 'change my order type'), use action='clear_order_type'. "
+		"Do NOT guess or keep the old type.\n"
+		"- Only use action='set_order_type' when the user explicitly states pickup, delivery, or dine-in.\n\n"
 		f"Existing order: {base_order}\n"
 		f"User message: {user_message}"
 	)
@@ -234,6 +238,9 @@ def update_extracted_order(old_order: dict[str, Any], user_message: str) -> dict
 			base_order["order_type"] = change.order_type
 			if change.order_type == "pickup":
 				base_order["delivery_address"] = None
+		elif change.action == "clear_order_type":
+			base_order["order_type"] = None
+			base_order["delivery_address"] = None
 		elif change.action == "set_delivery_address":
 			base_order["delivery_address"] = change.delivery_address
 		elif change.action == "set_customer_notes":
@@ -324,5 +331,101 @@ def get_order_by_id(order_id: int) -> dict[str, Any] | None:
 				"delivery_status": order.delivery.delivery_status,
 			},
 		}
+	finally:
+		db.close()
+
+
+def cancel_order(order_id: int, customer_id: int | None = None) -> dict[str, Any]:
+	"""Set an order's status to 'cancelled' in the database.
+
+	Returns a result dict with keys: success (bool), order_id, message.
+	If customer_id is provided, it verifies the order belongs to that customer
+	before cancelling.
+	"""
+	db = SessionLocal()
+	try:
+		order = order_repository.get_order_by_id(db, order_id=order_id)
+		if order is None:
+			return {
+				"success": False,
+				"order_id": order_id,
+				"message": f"Order #{order_id} was not found.",
+			}
+		if customer_id is not None and order.customer_id != customer_id:
+			return {
+				"success": False,
+				"order_id": order_id,
+				"message": f"Order #{order_id} does not belong to your account.",
+			}
+		if order.order_status == "cancelled":
+			return {
+				"success": False,
+				"order_id": order_id,
+				"message": f"Order #{order_id} is already cancelled.",
+			}
+		order_repository.update_order_status(db, order_id=order_id, order_status="cancelled")
+		return {
+			"success": True,
+			"order_id": order_id,
+			"message": f"Order #{order_id} has been successfully cancelled.",
+		}
+	finally:
+		db.close()
+
+
+def update_placed_order(
+	order_id: int,
+	customer_id: int | None = None,
+	order_type: str | None = None,
+	items_to_add: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+	"""Update attributes of an already-placed order in the database.
+
+	Supports:
+	- Changing order_type (pickup / delivery / dine_in)
+	- Adding items to the order (items_to_add: list of {item_name, quantity})
+
+	Returns a result dict with keys: success (bool), order_id, changes (list[str]), message.
+	"""
+	db = SessionLocal()
+	try:
+		order = order_repository.get_order_by_id(db, order_id=order_id)
+		if order is None:
+			return {"success": False, "order_id": order_id, "message": f"Order #{order_id} was not found."}
+		if customer_id is not None and order.customer_id != customer_id:
+			return {"success": False, "order_id": order_id, "message": f"Order #{order_id} does not belong to your account."}
+		if order.order_status == "cancelled":
+			return {"success": False, "order_id": order_id, "message": f"Order #{order_id} is cancelled and cannot be modified."}
+
+		changes: list[str] = []
+
+		if order_type and order_type in {"pickup", "delivery", "dine_in"}:
+			old_type = order.order_type
+			order_repository.update_order_type(db, order_id=order_id, order_type=order_type)
+			display = {"dine_in": "dine-in"}.get(order_type, order_type)
+			changes.append(f"order type from {old_type} to {display}")
+
+		if items_to_add:
+			validation = validate_order_items(items_to_add)
+			valid = validation["valid_items"]
+			invalid = validation["invalid_items"]
+			if valid:
+				order_repository.create_order_items(db, order_id=order_id, items=valid)
+				names = ", ".join(f"{i['quantity']}x {i['item_name']}" for i in valid)
+				changes.append(f"added {names}")
+			if invalid:
+				invalid_names = ", ".join(i.get("item_name", "?") for i in invalid)
+				# Report invalid items but don't fail the whole request if some items were valid
+				if not valid:
+					return {
+						"success": False,
+						"order_id": order_id,
+						"message": f"Could not find these items on the menu: {invalid_names}.",
+					}
+
+		if not changes:
+			return {"success": False, "order_id": order_id, "message": "No recognised changes were requested."}
+
+		return {"success": True, "order_id": order_id, "changes": changes, "message": "Order updated successfully."}
 	finally:
 		db.close()

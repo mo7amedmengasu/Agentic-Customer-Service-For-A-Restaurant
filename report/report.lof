@@ -1,0 +1,22 @@
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {4.1}{\ignorespaces Orchestrator Agent Graph}}{10}{figure.caption.6}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {5.1}{\ignorespaces Menu Agent Graph}}{12}{figure.caption.8}%
+\contentsline {figure}{\numberline {5.2}{\ignorespaces Menu Agent Reflection Loop}}{14}{figure.caption.11}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {6.1}{\ignorespaces FAQ Agent Graph}}{15}{figure.caption.12}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {7.1}{\ignorespaces Order Agent Graph}}{17}{figure.caption.14}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {8.1}{\ignorespaces Support Agent Graph}}{20}{figure.caption.16}%
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {10.1}{\ignorespaces Average Relevance, Correctness, and Helpfulness per agent (1–5 scale). The dashed line marks the pass threshold of 3.0.}}{26}{figure.caption.21}%
+\contentsline {figure}{\numberline {10.2}{\ignorespaces Pass rate (bars, left axis) and overall average score (line, right axis) per agent.}}{27}{figure.caption.22}%
+\contentsline {figure}{\numberline {10.3}{\ignorespaces Per-test score heatmap. Green = high score (4–5), red = low score (1–2).}}{28}{figure.caption.23}%
+\contentsline {figure}{\numberline {10.4}{\ignorespaces Radar chart comparing Relevance, Correctness, and Helpfulness across all agents.}}{29}{figure.caption.24}%
+\addvspace {10\p@ }
+\addvspace {10\p@ }

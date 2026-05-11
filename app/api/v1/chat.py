@@ -22,10 +22,13 @@ _graph = None
 _session_agent_state: Dict[int, dict] = {}
 
 PERSISTENT_FIELDS = (
-    "extracted_order", "order_id", "order_confirmed",
+    "extracted_order", "order_confirmed",
     "order_awaiting_confirmation",
     "extracted_complaint", "needs_human",
     "customer_id",
+    # Tracks the order the user is actively modifying across multiple turns.
+    # Only set when user explicitly identifies an order ID; cleared on completion.
+    "modification_target_id",
 )
 
 
@@ -171,11 +174,16 @@ def send_message(
 
     ai_response = final_state.get("response") or "I'm sorry, I couldn't process that."
 
-    # Persist cross-turn state fields for next request
+    # Persist cross-turn state fields for next request.
+    # When a field is explicitly reset to None (e.g. extracted_order after placing),
+    # remove it from the cache so stale values don't carry into the next turn.
     updated_state = _session_agent_state.get(session_id, {})
     for field in PERSISTENT_FIELDS:
-        if final_state.get(field) is not None:
-            updated_state[field] = final_state[field]
+        val = final_state.get(field)
+        if val is not None:
+            updated_state[field] = val
+        else:
+            updated_state.pop(field, None)
     _session_agent_state[session_id] = updated_state
 
     # Save assistant message and return it

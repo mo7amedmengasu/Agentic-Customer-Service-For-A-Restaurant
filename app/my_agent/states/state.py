@@ -27,3 +27,6 @@ class MainState(TypedDict):
     max_iterations: int
     # Orchestrator fields
     clarification_attempts: int
+    # Tracks the placed order the user is actively modifying across turns.
+    # Set when user identifies an order by ID; cleared when modification session ends.
+    modification_target_id: int | None

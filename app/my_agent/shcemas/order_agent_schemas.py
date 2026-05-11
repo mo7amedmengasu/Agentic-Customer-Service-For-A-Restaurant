@@ -12,7 +12,7 @@ class ExtractedItem(BaseModel):
 
 class ExtractedOrderPayload(BaseModel):
     items: list[ExtractedItem] = Field(default_factory=list)
-    order_type: Literal["pickup", "delivery"] | None = None
+    order_type: Literal["pickup", "delivery", "dine_in"] | None = None
     delivery_address: str | None = None
     customer_notes: str | None = None
 
@@ -24,13 +24,14 @@ class OrderChange(BaseModel):
         "replace",
         "change_quantity",
         "set_order_type",
+        "clear_order_type",
         "set_delivery_address",
         "set_customer_notes",
     ]
     item_name: str | None = None
     new_item_name: str | None = None
     quantity: int | None = None
-    order_type: Literal["pickup", "delivery"] | None = None
+    order_type: Literal["pickup", "delivery", "dine_in"] | None = None
     delivery_address: str | None = None
     customer_notes: str | None = None
 

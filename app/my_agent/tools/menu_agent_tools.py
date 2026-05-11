@@ -22,7 +22,7 @@ def create_menu_tools():
                 "id": item.item_id,
                 "name": item.item_name,
                 "description": item.item_description,
-                "price": float(item.item_price),
+                "price": f"${float(item.item_price):.2f}",
                 "image_url": item.item_image
             }
 
@@ -45,7 +45,7 @@ def create_menu_tools():
                 {
                     "id": item.item_id,
                     "name": item.item_name,
-                    "price": float(item.item_price),
+                    "price": f"${float(item.item_price):.2f}",
                     "description": item.item_description
                 } for item in items
             ]
@@ -71,7 +71,7 @@ def create_menu_tools():
                 {
                     "id": m[1].item_id,
                     "name": m[1].item_name,
-                    "price": float(m[1].item_price),
+                    "price": f"${float(m[1].item_price):.2f}",
                     "description": m[1].item_description,
                 }
                 for m in matches
@@ -91,7 +91,7 @@ def create_menu_tools():
                 {
                     "id": i.item_id,
                     "name": i.item_name, 
-                    "price": float(i.item_price)
+                    "price": f"${float(i.item_price):.2f}"
                 } for i in items
             ]
 
@@ -109,7 +109,7 @@ def create_menu_tools():
                 {
                     "id": i.item_id,
                     "name": i.item_name,
-                    "price": float(i.item_price),
+                    "price": f"${float(i.item_price):.2f}",
                     "description": i.item_description
                 } for i in items
             ]

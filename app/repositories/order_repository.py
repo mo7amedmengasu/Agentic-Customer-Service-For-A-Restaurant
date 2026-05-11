@@ -106,6 +106,16 @@ class OrderRepository(BaseRepository[Order]):
         db.refresh(order)
         return order
 
+    def update_order_type(self, db: Session, *, order_id: int, order_type: str) -> Optional[Order]:
+        order = self.get(db, order_id)
+        if order is None:
+            return None
+        order.order_type = order_type
+        db.add(order)
+        db.commit()
+        db.refresh(order)
+        return order
+
 
 order_repository = OrderRepository(Order)
 order_repo = order_repository

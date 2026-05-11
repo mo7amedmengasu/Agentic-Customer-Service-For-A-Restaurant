@@ -6,11 +6,13 @@ from app.my_agent.nodes.order_agent import (
 	ask_confirmation_node,
 	ask_missing_info_node,
 	calculate_summary_node,
+	cancel_order_node,
 	extract_order_node,
 	final_response_node,
 	modify_order_node,
 	order_reasoning_node,
 	place_order_node,
+	update_placed_order_node,
 	validate_order_node,
 )
 from app.my_agent.states.state import MainState
@@ -18,7 +20,7 @@ from app.my_agent.states.state import MainState
 
 def route_order_agent(state: MainState) -> str:
 	next_step = state.get("next_step", "final_response")
-	allowed = {"extract_order", "modify_order", "place_order", "final_response"}
+	allowed = {"extract_order", "modify_order", "place_order", "cancel_order", "update_placed_order", "final_response"}
 	return next_step if next_step in allowed else "final_response"
 
 
@@ -38,6 +40,8 @@ def build_order_agent_graph():
 	graph.add_node("ask_confirmation", ask_confirmation_node)
 	graph.add_node("modify_order", modify_order_node)
 	graph.add_node("place_order", place_order_node)
+	graph.add_node("cancel_order", cancel_order_node)
+	graph.add_node("update_placed_order", update_placed_order_node)
 	graph.add_node("final_response", final_response_node)
 
 	graph.set_entry_point("order_reasoning")
@@ -48,6 +52,8 @@ def build_order_agent_graph():
 			"extract_order": "extract_order",
 			"modify_order": "modify_order",
 			"place_order": "place_order",
+			"cancel_order": "cancel_order",
+			"update_placed_order": "update_placed_order",
 			"final_response": "final_response",
 		},
 	)
@@ -71,6 +77,8 @@ def build_order_agent_graph():
 	graph.add_edge("ask_missing_info", "final_response")
 	graph.add_edge("modify_order", "validate_order")
 	graph.add_edge("place_order", "final_response")
+	graph.add_edge("cancel_order", "final_response")
+	graph.add_edge("update_placed_order", "final_response")
 	graph.add_edge("final_response", END)
 
 	return graph.compile()
